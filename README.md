@@ -103,31 +103,70 @@ The trick is in fact quite simple. As at the heart of this a Persistent Volume i
 
 1. Following our previous usage example, edit the PV that was created with the `shared-folder` PVC. Change the field `persistentVolumeReclaimPolicy` from `Delete` to `Retain`.
 
-2. Copy the YAML definition of the PV and clean all non-essential information, like `annotations`, `finalizers`, `managedFields`, `claimRef` and `status`. Change the name of the PV. Beware, it had to still be unique, so for example, just add `-clone1` to the end. You should have something like this:
+2. Copy the YAML definition of the PV and clean all non-essential information, like `annotations`, `finalizers`, `managedFields`, `claimRef` and `status`. Change the name of the PV. Beware, it must still to be unique in the cluster. So for example, just add `-clone1` to the end. You should have something like this:
 
-```yaml
-kind: PersistentVolume
-apiVersion: v1
-metadata:
-  name: pvc-eb3508d9-bbb1-438b-a7d0-988dfcaca13d-clone1
-spec:
-  capacity:
-    storage: 1Mi
-  nfs:
-    server: 172.30.83.53
-    path: /export/pvc-eb3508d9-bbb1-438b-a7d0-988dfcaca13d
-  accessModes:
-    - ReadWriteMany
-  claimRef:
-    kind: PersistentVolumeClaim
-    namespace: test
-    name: shared-folder
-    uid: eb3508d9-bbb1-438b-a7d0-988dfcaca13d
+    ```yaml
+    kind: PersistentVolume
     apiVersion: v1
-    resourceVersion: '48412'
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: nfs-provisioner
-  mountOptions:
-    - vers=4.1
-  volumeMode: Filesystem
-```
+    metadata:
+        name: pvc-eb3508d9-bbb1-438b-a7d0-988dfcaca13d-clone1
+    spec:
+        capacity:
+            storage: 1Mi
+        nfs:
+            server: 172.30.83.53
+            path: /export/pvc-eb3508d9-bbb1-438b-a7d0-988dfcaca13d
+        accessModes:
+            - ReadWriteMany
+        persistentVolumeReclaimPolicy: Retain
+        storageClassName: nfs-provisioner
+        mountOptions:
+            - vers=4.1
+        volumeMode: Filesystem
+    ```
+
+    IMPORTANT: Do not change the capacity of the PV!
+
+3. Create the new PV with the YAML file.
+4. Switch to the project where you want to use the volume, and create a new PVC that will use the previously created PV. In this example, we are using a project named `clone`.
+
+    ```yaml
+    kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+        name: shared-folder
+        namespace: clone
+    spec:
+        accessModes:
+           - ReadWriteMany
+        resources:
+            requests:
+                storage: 1Mi
+        volumeName: pvc-eb3508d9-bbb1-438b-a7d0-988dfcaca13d-clone1
+        storageClassName: nfs-provisioner
+        volumeMode: Filesystem
+    accessModes:
+        - ReadWriteMany
+    capacity:
+        storage: 1Mi
+    ```
+
+5. To verify that this new PVC is using the same volume, you can again create a Pod in your project.
+
+    ```bash
+    oc apply -f pod-1.yaml -n clone
+    ```
+
+6. Using the terminal in this new pod, you can verify that you have access to the same file.
+
+    ```bash
+    cd /mnt
+    cat test.txt
+    ```
+
+To properly delete a shared volume like this:
+
+- Delete the PVCs in all the projects where you have "cloned" the volume except for the original one.
+- Delete the now unbound corresponding PVs. The `Retain` policy will keep the volume.
+- On the original PV, change the `persistentVolumeReclaimPolicy` back to `Delete`.
+- Delete the original PVC.
